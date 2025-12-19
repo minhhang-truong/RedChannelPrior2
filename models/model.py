@@ -1393,18 +1393,29 @@ class PriorGuidedRE(nn.Module):
 
         for i in range(self.down_depth + 1):
             self.dr.append(DetailRestorer(self.ch_in * 2 ** i))
-            self.fusion.append(ScaleHarmonizer(self.ch_in * 2 ** (i + 1), self.ch_in * 2 ** i))
+
+            if i < self.down_depth:
+                self.fusion.append(ScaleHarmonizer(self.ch_in * 2 ** i * 3, self.ch_in * 2 ** i))
+            else:
+                fc_out_channels = self.ch_in * 2 ** (self.down_depth + 1)
+                enc_res_channels = self.ch_in * 2 ** self.down_depth
+                
+                self.fusion.append(ScaleHarmonizer(in_nc=fc_out_channels + enc_res_channels, 
+                                                   out_nc=enc_res_channels))
+
 
 
     def forward(self, x, prior):
         dr_res = []
         dr_res.append(self.dr[0](x))
+        prior_features = []
         prior_low = prior
         for i, (down, prior_down) in enumerate(zip(self.downs, self.prior_downs)):
+            current_prior_feat = self.prior_r[i](prior_low)
+            prior_features.append(current_prior_feat)
+            prior_low = prior_down(current_prior_feat)
             low = down(dr_res[i])
             dr_res.append(self.dr[i + 1](low))
-            prior_low = self.prior_r[i](prior_low)
-            prior_low = prior_down(prior_low)
         fusion_res = []
 
         fusion_res.append(self.fusion[-1](self.fc(dr_res[-1], prior_low)))
@@ -1412,7 +1423,7 @@ class PriorGuidedRE(nn.Module):
 
         for i in reversed(range(0, self.down_depth)):
             fusion_res[-1] = self.up[i](fusion_res[-1])
-            fusion_in = torch.cat((fusion_res[-1], dr_res[i]), dim=1)
+            fusion_in = torch.cat((fusion_res[-1], dr_res[i], prior_features[i]), dim=1)
             fusion_res.append(self.fusion[i](fusion_in))
 
         out = torch.cat((x, fusion_res[-1], prior), dim=1)
