@@ -1418,7 +1418,10 @@ class PriorGuidedRE(nn.Module):
             dr_res.append(self.dr[i + 1](low))
         fusion_res = []
 
-        fusion_res.append(self.fusion[-1](self.fc(dr_res[-1], prior_low)))
+        fc_out = self.fc(dr_res[-1], prior_low)
+        fusion_in_bottleneck = torch.cat((fc_out, dr_res[-1]), dim=1)
+
+        fusion_res.append(self.fusion[-1](fusion_in_bottleneck))
         fusion_res[-1] = fusion_res[-1] + dr_res[-1]
 
         for i in reversed(range(0, self.down_depth)):
